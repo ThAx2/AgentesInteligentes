@@ -1,139 +1,106 @@
 # encoding: UTF-8
 module Entorno
+  module_function
+
   VERSION = "3.3.8"
-  puts "Bienvenido al Agente inteligente version 1: Ruby #{VERSION}"
+
+  @mapa = [
+    [".", "X", ".", ".", "P"],
+    [".", "X", ".", "X", "."],
+    [".", ".", "A", ".", "."],
+    ["P", "X", ".", "X", "."],
+    [".", ".", ".", ".", "P"],
+  ]
+
+  @estado = {
+    fila: 0,
+    columna: 0,
+    puntuacion: 0, # --- MEDIDA DE RENDIMIENTO: Puntos base de la simulación ---
+    acciones: 0,   # --- MEDIDA DE RENDIMIENTO: Conteo de turnos gastados ---
+    paquetes_totales: 3,
+    penalizaciones: 0, # --- MEDIDA DE RENDIMIENTO: Registro de castigos por choques ---
+  }
+
+  def buscar_posicion_inicial
+    @mapa.each_with_index do |fila, f_idx|
+      fila.each_with_index do |celda, c_idx|
+        if celda == "A"
+          @estado[:fila] = f_idx
+          @estado[:columna] = c_idx
+          @mapa[f_idx][c_idx] = "."
+          return [f_idx, c_idx]
+        end
+      end
+    end
+    [0, 0]
+  end
 
   def limpiar_consola
     system(Gem.win_platform? ? "cls" : "clear")
   end
 
-  entorno = [
+  def configurar_inicio(fila, columna)
+    @estado[:fila] = fila
+    @estado[:columna] = columna
+  end
 
-    [".", ".", ".", "P", "."],
+  def mapa_valido?(fila, columna)
+    fila >= 0 && fila < @mapa.length && columna >= 0 && columna < @mapa[fila].length
+  end
 
-    [".", "X", ".", ".", "."],
+  # --- PERCEPCIONES: El entorno le arma el "chisme" al agente de cómo está el mundo ---
+  def obtener_percepcion
+    {
+      mapa: @mapa,
+      fila: @estado[:fila],
+      columna: @estado[:columna],
+      puntuacion: @estado[:puntuacion],
+      acciones: @estado[:acciones],
+    }
+  end
 
-    [".", ".", ".", "X", "P"],
+  # --- ACCIONES Y MEDIDA DE RENDIMIENTO: Aquí se aplican los castigos, premios y el movimiento físico ---
+  def aplicar_accion(mov_fila, mov_columna)
+    @estado[:acciones] += 1 # --- MEDIDA DE RENDIMIENTO: Cada paso cuenta como acción ---
 
-    [".", ".", "P", ".", "."],
+    if @estado[:acciones] > 50
+      puts "\n Límite de 50 acciones alcanzado. Fin de la simulación."
+      puts "Puntuación final: #{@estado[:puntuacion]}" # --- MEDIDA DE RENDIMIENTO ---
+      puts "Paquetes restantes: #{@estado[:paquetes_totales]}"
+      puts "Penalizaciones: #{@estado[:penalizaciones]}" # --- MEDIDA DE RENDIMIENTO ---
 
-    [".", "X", ".", ".", "."],
-
-  ]
-  $carrito = {
-    posicion: [0, 0],
-    puntuacion: 0,
-
-  }
-
-  def main(entorno)
-    loop do
-      puts "Ingresa la posicion inicial del agente"
-
-      print "Digite la fila: [fila,columna]: "
-      fila = gets.chomp.to_i
-
-      print "Digite la columna: [#{fila},columna]: "
-      columna = gets.chomp.to_i
-
-      if fila >= 0 && fila < entorno.length &&
-         columna >= 0 && columna < entorno[fila].length
-        $carrito[:posicion] = [fila, columna]
-
-        puts
-        puts "Posicion actual: #{$carrito[:posicion]}"
-
-        break
-      else
-        puts
-        puts "Posicion invalida. Intenta nuevamente."
-        puts
-      end
+      exit
     end
-  end
 
-  def paquete(entorno, row, column)
-    $carrito[:puntuacion] += 1
-    entorno[row][column] = "."
-    puts "Has recogido un paquete correctamente: "
-    puts "Puntuacion actual: #{$carrito[:puntuacion]}"
-  end
+    nueva_fila = @estado[:fila] + mov_fila
+    nueva_columna = @estado[:columna] + mov_columna
 
-  def element(entorno, elemento, row, column)
-    puts ""
-    case elemento
+    # --- DECISIONES / ACCIÓN DE RECOGER: Si decide quedarse y hay paquete, se cobra ---
+    if mov_fila == 0 && mov_columna == 0 && @mapa[@estado[:fila]][@estado[:columna]] == "P"
+      @mapa[@estado[:fila]][@estado[:columna]] = "."
+      @estado[:puntuacion] += 10 # --- MEDIDA DE RENDIMIENTO: +10 por paquete ---
+      @estado[:paquetes_totales] -= 1
+      puts "¡Has recogido un paquete! (+10 puntos)"
 
-    when "."
-      puts "Es via libre"
-    when "P"
-      puts "Has encontrado un paquete"
-      paquete(entorno, row, column)
+      if @estado[:paquetes_totales] <= 0
+        @estado[:puntuacion] += 20 # --- MEDIDA DE RENDIMIENTO: +20 por terminar todo ---
+        puts "\n ¡Objetivo cumplido! Todos los paquetes recogidos (+20 bonificación)."
+        puts "Puntuación final: #{@estado[:puntuacion]}" # --- MEDIDA DE RENDIMIENTO ---
+        exit
+      end
+      return
+    end
+
+    # --- ACCIONES: Moverse si el caminito está libre, o castigar si choca ---
+    if mapa_valido?(nueva_fila, nueva_columna) && @mapa[nueva_fila][nueva_columna] != "X"
+      @estado[:fila] = nueva_fila
+      @estado[:columna] = nueva_columna
+      @estado[:puntuacion] -= 1 # --- MEDIDA DE RENDIMIENTO: -1 por cada paso normal ---
     else
-      puts "Obstaculo"
-      gatillo = false
+      @estado[:penalizaciones] += 1 # --- MEDIDA DE RENDIMIENTO: Suma una falta ---
+      puts "¡Atrapado o movimiento inválido! Penalización (-5 puntos)"
+      @estado[:puntuacion] -= 5 # --- MEDIDA DE RENDIMIENTO: -5 por chocar con pared o X ---
     end
-  end
-
-  def sensor(entorno, row, column)
-    if row >= 0 && row < entorno.length &&
-       column >= 0 && column < entorno[row].length
-      true
-    else
-      puts "\nLimite de mapa, tu posición no cambiará"
-      puts "Enter para continuar: "
-      gets.chomp
-      false
-    end
-  end
-
-  def movimiento(entorno, row, column)
-    puts ""
-    puts "Define a donde quieres desplazarte:"
-    puts "1) Arriba"
-    puts "2) Abajo"
-    puts "3) Izquierda"
-    puts "4) Derecha"
-
-    movimiento_elegido = gets.chomp.to_i
-
-    case movimiento_elegido
-
-    when 1 # Arriba
-      if sensor(entorno, row - 1, column)
-        row -= 1
-      end
-    when 2 # Abajo
-      if sensor(entorno, row + 1, column)
-        row += 1
-      end
-    when 3 # Izquierda
-      if sensor(entorno, row, column - 1)
-        column -= 1
-      end
-    when 4 # Derecha
-      if sensor(entorno, row, column + 1)
-        column += 1
-      end
-    else
-      puts "Movimiento no válido"
-    end
-    limpiar_consola
-    puts "Posición actual: [#{row}, #{column}]"
-
-    element(entorno, entorno[row][column], row, column)
-    return [row, column]
-  end
-
-  main(entorno)
-  row = $carrito[:posicion][0]
-  column = $carrito[:posicion][1]
-  loop do
-    row, column = movimiento(entorno, row, column)
-    $carrito[:posicion] = [row, column]
-  end
-
-  def obstaculo(entorno, row, column)
-    puts "Obstaculo encontrado en"
   end
 end
 
